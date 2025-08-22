@@ -1,8 +1,13 @@
 # main.py
+import os
 import sys
 import random
 import asyncio
 import pygame
+
+# ---- Render quality tweaks (do this BEFORE pygame.init) ----
+# 0=nearest (blocky), 1=linear, 2=best (anisotropic if available)
+os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "2")
 
 # Initialize Pygame
 pygame.init()
@@ -54,16 +59,22 @@ FACTORY_Y = SCREEN_HEIGHT - 50 - FACTORY_HEIGHT
 # Initial number of pollution clouds
 INITIAL_CLOUDS = 5
 
-# Set up the display
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+# Set up the display (use SCALED for smoother browser scaling)
+display_flags = 0
+if hasattr(pygame, "SCALED"):
+    display_flags |= pygame.SCALED
+
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display_flags)
 pygame.display.set_caption('Eco Defender')
 
-# Clock for controlling frame rate
+# Clock for controlling the frame rate
 clock = pygame.time.Clock()
 
 # Initialize fonts
 pygame.font.init()
 font = pygame.font.SysFont("Arial", 24)
+title_font = pygame.font.SysFont("Arial", 48, bold=True)
+small_font = pygame.font.SysFont("Arial", 20)
 
 
 def draw_coalition(surface, x, y):
@@ -112,16 +123,70 @@ def draw_factory(surface, pollution_level):
     surface.blit(factory_text, text_rect)
 
 
+async def show_instructions():
+    """
+    Pre-game instructions screen. Waits for Enter/Space to start.
+    """
+    waiting = True
+    blink = 0
+    while waiting:
+        clock.tick(60)
+        blink = (blink + 1) % 60
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    waiting = False
+
+        # Draw background
+        screen.fill(BACKGROUND_COLOR)
+
+        # Title
+        title = title_font.render("Eco Defender", True, WHITE)
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 120))
+
+        # Instructions
+        lines = [
+            "How to Play:",
+            "• Use the ARROW KEYS to move your group.",
+            "• Press SPACE to throw leaves.",
+            "• Leaves destroy pollution clouds.",
+            "• Plant leaves to grow trees that auto-shoot leaves.",
+            "• Make the factory carbon neutral 10 times to win!"
+        ]
+        y = 210
+        for i, text in enumerate(lines):
+            surf = font.render(text, True, WHITE)
+            screen.blit(surf, (SCREEN_WIDTH // 2 - surf.get_width() // 2, y))
+            y += 36
+
+        # Blink 'Press' prompt
+        if blink < 40:
+            press = small_font.render("Press ENTER or SPACE to start", True, WHITE)
+            screen.blit(press, (SCREEN_WIDTH // 2 - press.get_width() // 2, SCREEN_HEIGHT - 80))
+
+        pygame.display.flip()
+        await asyncio.sleep(0)
+
+    return True
+
+
 async def victory(surface):
     surface.fill(BACKGROUND_COLOR)
     message_text = font.render("You've made the factory carbon neutral!", True, WHITE)
     surface.blit(message_text, (SCREEN_WIDTH // 2 - message_text.get_width() // 2, SCREEN_HEIGHT // 2))
     pygame.display.flip()
-    # Non-blocking wait (works in browser)
     await asyncio.sleep(5)
 
 
 async def main():
+    # --- show instructions first ---
+    cont = await show_instructions()
+    if not cont:
+        return
+
     # Player starting position
     player_x = SCREEN_WIDTH // 2 - PLAYER_WIDTH // 2
     player_y = SCREEN_HEIGHT - PLAYER_HEIGHT - 50
@@ -155,7 +220,6 @@ async def main():
 
     while running:
         # --- FRAME CONTROL ---
-        # Keep classic tick for desktop AND yield to browser for web
         clock.tick(60)
         await asyncio.sleep(0)
 
@@ -306,5 +370,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Async entry point (works on desktop and in browser with pygbag)
     asyncio.run(main())
